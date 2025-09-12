@@ -3,11 +3,14 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import uuid
 from models.crop_recommender import CropRecommender
 from models.price_predictor import PricePredictor
 from utils.visualizations import create_crop_probability_chart, create_price_trend_chart, create_regional_price_comparison
 from utils.recommendations import RecommendationEngine
 from data.data_generator import generate_sample_data
+from database.connection import get_database
+from pages.farmer_profile import show_farmer_profile
 
 # Page configuration
 st.set_page_config(
@@ -51,6 +54,13 @@ def load_and_train_models():
 def main():
     st.title("🌾 Smart Crop & Market Price Recommender")
     st.markdown("### AI-powered farming decisions for maximum profitability")
+    
+    # Navigation
+    page = st.sidebar.selectbox("Navigate", ["🏠 Home", "👨‍🌾 Farmer Profile"])
+    
+    if page == "👨‍🌾 Farmer Profile":
+        show_farmer_profile()
+        return
     
     # Load models
     with st.spinner("Loading AI models..."):
@@ -101,6 +111,35 @@ def main():
             recommendations = rec_engine.get_comprehensive_recommendation(
                 input_features[0], selected_state
             )
+            
+            # Save recommendation to database if farmer is logged in
+            if 'farmer_id' in st.session_state and st.session_state.farmer_id and recommendations:
+                db = get_database()
+                session_id = str(uuid.uuid4())
+                
+                recommendation_data = {
+                    'farmer_id': st.session_state.farmer_id,
+                    'session_id': session_id,
+                    'recommended_crop': recommendations['recommended_crop'],
+                    'suitability_score': crop_predictions[0]['suitability_score'],
+                    'market_score': recommendations['crop_analysis'][0]['market_score'],
+                    'combined_score': recommendations['crop_analysis'][0]['combined_score'],
+                    'best_market': recommendations['market_recommendation']['best_market'],
+                    'expected_price': recommendations['market_recommendation']['expected_price'],
+                    'profit_margin': recommendations['market_recommendation']['profit_margin'],
+                    'soil_n': nitrogen,
+                    'soil_p': phosphorus,
+                    'soil_k': potassium,
+                    'soil_ph': ph,
+                    'temperature': temperature,
+                    'humidity': humidity,
+                    'rainfall': rainfall,
+                    'state': selected_state
+                }
+                
+                rec_id = db.insert_recommendation(recommendation_data)
+                if rec_id:
+                    st.success("✅ Recommendation saved to your profile!")
         
         # Display results
         col1, col2 = st.columns([2, 1])
